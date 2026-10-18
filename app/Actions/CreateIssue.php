@@ -62,16 +62,18 @@ final readonly class CreateIssue
             return $this->createImageFiles->handle($images, $descriptions, 'issue-images/'.$user->id);
         });
 
+        $screenshots = '';
+
         foreach ($files as $file) {
             $url = route('issue-image.show', ['reporter' => $user->id, 'image' => pathinfo($file['path'], PATHINFO_FILENAME)]);
             $description = e($file['description'] ?: 'Screenshot '.($file['position'] + 1));
-            $body .= "\n\n<img src=\"{$url}\" alt=\"{$description}\" />";
+            $screenshots .= "<img src=\"{$url}\" alt=\"{$description}\" />\n\n";
         }
 
         try {
             return $this->github->createIssue(
                 Str::limit($title, 256, '') ?: ucfirst($type).' report',
-                $body.$this->details($environment)."\n\n---\n\nReported by {$user->mention()} via [/dev/null](".route('user.show', $user).').',
+                $screenshots.$body.$this->details($environment)."\n\n---\n\nReported by {$user->mention()} via [/dev/null](".route('user.show', $user).').',
                 [$type === 'feature' ? 'enhancement' : 'bug'],
             );
         } catch (RequestException $requestException) {

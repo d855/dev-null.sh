@@ -13,6 +13,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use League\CommonMark\GithubFlavoredMarkdownConverter;
 
 beforeEach(function (): void {
     Storage::fake();
@@ -197,6 +198,30 @@ it('embeds optimized screenshots with permanent public URLs and escaped descript
         && str_contains((string) $request['body'], '<img src="'.$url.'" alt="A &quot;broken&quot; &lt;timeline&gt;" />'));
     $this->assertDatabaseCount('commits', 0);
 })->with(['png', 'jpg', 'webp']);
+
+it('renders screenshots before unfinished Markdown in the bug description', function (string $unfinished): void {
+    fakeGitHubApp();
+    $body = "The timeline jumps.\n\n".$unfinished;
+
+    $this->actingAs(User::factory()->create())->post(route('issue.store'), [
+        'command' => '/bug',
+        'body' => $body,
+        'images' => [UploadedFile::fake()->image('first.png'), UploadedFile::fake()->image('second.png')],
+        'image_descriptions' => ['First screenshot', 'Second screenshot'],
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    $request = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/issues'))->first()[0];
+    $html = (string) new GithubFlavoredMarkdownConverter()->convert($request['body']);
+
+    expect(mb_substr_count($html, '<img '))->toBe(2)
+        ->and(mb_strpos($html, 'alt="First screenshot"'))->toBeLessThan(mb_strpos($html, 'alt="Second screenshot"'))
+        ->and($request['title'])->toBe('The timeline jumps.')
+        ->and($request['body'])->toContain($body);
+})->with([
+    'backtick fence' => ["```text\nError: failed to load"],
+    'tilde fence' => ["~~~text\nError: failed to load"],
+    'HTML comment' => ['<!-- unfinished comment'],
+]);
 
 it('validates bug attachments before contacting GitHub', function (array $payload, string $field): void {
     Http::fake();
