@@ -156,6 +156,11 @@ function CommitComposerBody({
     const textBox = useRef<HTMLDivElement>(null);
     const preview = useComposerPreview({ body, textareaRef, isSubmittable });
     const isIssue = issue.command !== null;
+    const acceptsImages =
+        issue.command?.kind !== 'feature' &&
+        poll === null &&
+        !processing &&
+        !issue.processing;
 
     // When the dialog's text box shrinks, as the keyboard opens or an image is added, it keeps the caret in view.
     useEffect(() => {
@@ -183,7 +188,7 @@ function CommitComposerBody({
     return (
         <div
             className={cn('relative flex', { 'min-h-0': isInDialog })}
-            {...(poll === null ? attachments.dropzone : {})}
+            {...(acceptsImages ? attachments.dropzone : {})}
         >
             {attachments.isDraggingFiles && (
                 <ImageDropOverlay className="inset-2" />
@@ -254,7 +259,7 @@ function CommitComposerBody({
                             value={body}
                             onValueChange={issue.change}
                             onPaste={
-                                poll === null ? attachments.onPaste : undefined
+                                acceptsImages ? attachments.onPaste : undefined
                             }
                             onKeyDown={(event) =>
                                 preview.handleShortcut(event) ||
@@ -419,15 +424,17 @@ function CommitComposerBody({
 
                     <div className="mt-2 flex flex-wrap items-center justify-end gap-x-4 gap-y-2 sm:flex-nowrap">
                         <div className="flex min-w-0 flex-1 items-center gap-x-1 max-sm:basis-full">
+                            {issue.command?.kind !== 'feature' && (
+                                <ImagePickerButton
+                                    count={attachments.images.length}
+                                    disabled={!acceptsImages}
+                                    reading={attachments.reading}
+                                    onPick={attachments.pick}
+                                    className="-ml-2"
+                                />
+                            )}
                             {!isIssue && (
                                 <>
-                                    <ImagePickerButton
-                                        count={attachments.images.length}
-                                        disabled={processing || poll !== null}
-                                        reading={attachments.reading}
-                                        onPick={attachments.pick}
-                                        className="-ml-2"
-                                    />
                                     <ActionTooltip
                                         label={
                                             hasImages
@@ -606,12 +613,10 @@ export function CommitComposer({
     const hasImages = attachments.images.length > 0;
     const issue = useIssueCommand({
         body,
+        images: attachments.images,
+        descriptions: attachments.descriptions,
         updateBody: stash.updateBody,
-        enabled:
-            !attachments.reading &&
-            !hasImages &&
-            poll === null &&
-            !isScheduling,
+        enabled: !attachments.reading && poll === null && !isScheduling,
         hasSecrets: secrets.findings.length > 0,
         onCreated: () => {
             drop();
@@ -628,10 +633,13 @@ export function CommitComposer({
         (poll === null ||
             poll.options.every((option) => option.trim().length > 0));
 
+    // Screenshots can carry a commit, but an issue still needs text.
     const isSubmittable =
-        isCommittable &&
-        (!isScheduling ||
-            (scheduledAt !== '' && isExistingLocalTime(scheduledAt)));
+        issue.command !== null
+            ? isCommittable && characterCount(body.trim()) >= minBodyLength
+            : isCommittable &&
+              (!isScheduling ||
+                  (scheduledAt !== '' && isExistingLocalTime(scheduledAt)));
 
     useEffect(() => discardSeriesStash(user.id), [user.id]);
 
@@ -649,7 +657,7 @@ export function CommitComposer({
         if (
             issue.handleKeyDown(
                 event,
-                isCommittable && !attachments.isReading(),
+                isSubmittable && !attachments.isReading(),
             )
         ) {
             return;

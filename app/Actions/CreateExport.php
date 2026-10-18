@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\LazyCollection;
 use stdClass;
 
@@ -30,12 +31,12 @@ final readonly class CreateExport
     /**
      * Everything stored about the user, deleted commits included, but never secrets like the remember token or session ids.
      *
-     * @return array{schema_version: int, exported_at: string, profile: array<string, bool|int|string|null>, commits: Generator<int, array<string, mixed>>, polls: Generator<int, array{commit_id: string, duration_minutes: int, opened_at: string|null, options: list<string>, created_at: string}>, poll_votes: Generator<int, array{commit_id: string, option: string, created_at: string}>, stars: Generator<int, string>, following: Generator<int, array{username: string}>, followers: Generator<int, array{username: string}>, muting: Generator<int, array{username: string}>, blocking: Generator<int, array{username: string}>, dismissed_suggestions: Generator<int, array{username: string}>, messages: Generator<int, array{to: string|null, body: string, voice: string|null, created_at: string}>, notifications: Generator<int, array<string, int|string|null>>, ssh_keys: array<mixed>, devices: array<int, array{name: string, fingerprint: string, approved_at: string, last_used_at: string|null}>, timeouts: array<int, array{reason: string, ends_at: string, created_at: string}>, sessions: Collection<int, stdClass>}
+     * @return array{schema_version: int, issue_images: list<string>, exported_at: string, profile: array<string, bool|int|string|null>, commits: Generator<int, array<string, mixed>>, polls: Generator<int, array{commit_id: string, duration_minutes: int, opened_at: string|null, options: list<string>, created_at: string}>, poll_votes: Generator<int, array{commit_id: string, option: string, created_at: string}>, stars: Generator<int, string>, following: Generator<int, array{username: string}>, followers: Generator<int, array{username: string}>, muting: Generator<int, array{username: string}>, blocking: Generator<int, array{username: string}>, dismissed_suggestions: Generator<int, array{username: string}>, messages: Generator<int, array{to: string|null, body: string, voice: string|null, created_at: string}>, notifications: Generator<int, array<string, int|string|null>>, ssh_keys: array<mixed>, devices: array<int, array{name: string, fingerprint: string, approved_at: string, last_used_at: string|null}>, timeouts: array<int, array{reason: string, ends_at: string, created_at: string}>, sessions: Collection<int, stdClass>}
      */
     public function handle(User $user): array
     {
         return [
-            'schema_version' => 2,
+            'schema_version' => 3,
             'exported_at' => now()->toIso8601String(),
             'profile' => [
                 'github_id' => $user->github_id,
@@ -80,6 +81,9 @@ final readonly class CreateExport
             'dismissed_suggestions' => $this->usernames($user->dismissedSuggestions()),
             'messages' => $this->messages($user),
             'notifications' => $this->notifications($user),
+            'issue_images' => array_values(collect(Storage::disk()->files('issue-images/'.$user->id))
+                ->map(fn (string $path): string => route('issue-image.show', ['reporter' => $user->id, 'image' => pathinfo($path, PATHINFO_FILENAME)]))
+                ->all()),
             'ssh_keys' => $user->sshKeys()->pluck('fingerprint')->all(),
             'devices' => $user->devices()->oldest('approved_at')->get()->map(fn (Device $device): array => [
                 'name' => $device->name,
